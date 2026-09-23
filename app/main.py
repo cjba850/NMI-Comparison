@@ -2,12 +2,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
+from datetime import date
+from .aemo_client import AemoApiError, AemoNmiClient, intervals_to_csv
 from .engine import build_report, parse_aemo_spot_csv, parse_nmi_upload, calculate_plan
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PLANS_FILE = BASE_DIR / "data" / "plans.json"
-app = FastAPI(title="NMI Energy Plan Calculator", version="0.2.0")
+app = FastAPI(title="NMI Energy Plan Calculator", version="0.3.0")
 
 
 def load_plans():
@@ -51,3 +53,48 @@ async def api_calculate(
         return build_report(results, year, file.filename or "upload.csv", region)
     except (UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/aemo/nmi/{nmi}/usage")
+def api_aemo_usage(
+    nmi: str,
+    start: date,
+    end: date,
+    interval_reads: str = "FULL",
+):
+    try:
+        intervals = AemoNmiClient.from_env().get_usage(nmi, start, end, interval_reads)
+        return {
+            "nmi": nmi,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "interval_reads": interval_reads.upper(),
+            "intervals": [
+                {"timestamp": x.timestamp.isoformat(), "kwh": x.kwh, "register": x.register}
+                for x in intervals
+            ],
+            "count": len(intervals),
+            "total_kwh": round(sum(x.kwh for x in intervals), 3),
+        }
+    except (AemoApiError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/aemo/nmi/{nmi}/download")
+def api_aemo_download(
+    nmi: str,
+    start: date,
+    end: date,
+    interval_reads: str = "FULL",
+):
+    try:
+        intervals = AemoNmiClient.from_env().get_usage(nmi, start, end, interval_reads)
+    except (AemoApiError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    csv_data = intervals_to_csv(intervals)
+    filename = f"nmi-{nmi}-{start.isoformat()}-{end.isoformat()}.csv"
+    return StreamingResponse(
+        iter([csv_data]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -1,4 +1,4 @@
-# NMI Energy Plan Calculator v0.2
+# NMI Energy Plan Calculator v0.3
 
 Self-hosted Australian electricity cost calculator for NMI interval exports.
 
@@ -132,3 +132,19 @@ See `docs/SYSTEMD.md`. Put the service behind a reverse proxy/HTTPS and authenti
 - AEMO Electricity Data Model: `TRADINGPRICE.RRP` and five-minute spot-price definition. citeturn0search0turn0search12
 - AEMO CSV data format overview. citeturn0search4
 - Energy Made Easy: https://www.energymadeeasy.gov.au/
+
+## AEMO NMI API lookup (v0.3)
+
+The service can now retrieve interval usage for a specific NMI through AEMO's Consumer Data Right API when the server is configured with the required AEMO participant credentials and TLS certificate. AEMO documents `getUsageForServicePoint` as returning up to 24 months of meter data for a single NMI. citeturn1view0turn3search0
+
+The browser exposes **Download CSV** and **Preview** under the AEMO NMI section. The downloaded CSV is normalised to:
+
+```text
+timestamp,kwh,register
+```
+
+This means an API download can be fed straight back into the existing calculator and retained as a reproducible snapshot.
+
+AEMO access is not anonymous. The connector therefore reads credentials and TLS certificate paths from environment variables and never accepts them from the browser. AEMO states that CDR API access requires a registered FRMP, MSATS/URM access, AEMO registration and TLS certificates. citeturn1view0
+
+See `docs/AEMO_API.md` and `.env.example` for configuration.

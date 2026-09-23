@@ -1,13 +1,17 @@
-feat: add v0.2 flat tou and wholesale tariff engines
+feat: add AEMO NMI usage API lookup and CSV download
 
-Extend the self-hosted NMI electricity calculator with:
-- flat, TOU and wholesale tariff engines
-- AEMO five-minute RRP CSV import
-- NEM region selection
-- 30-minute NMI to five-minute spot-price alignment
-- wholesale retailer margin/other component support
-- annual comparison reporting and effective c/kWh
-- expanded tests and v0.2 documentation
+Add an AEMO CDR client for getUsageForServicePoint with:
+- production and pre-production endpoint configuration
+- URM basic authentication
+- optional client TLS certificate/key
+- date range and FULL/MIN_30 interval selection
+- pagination handling
+- conversion of CDR usage responses to the common Interval model
+- normalised CSV download endpoint
+- browser preview/download controls
+- server-side credential handling
+- AEMO API configuration and access documentation
+- unit tests for CDR response parsing and download format
 
-The supplied tariffs remain fictional examples and must be replaced with
-verified retailer rates before real plan comparisons.
+Note: AEMO CDR access requires the appropriate participant/ADR arrangements,
+URM permissions and TLS certificates. The application does not bypass AEMO access controls.
