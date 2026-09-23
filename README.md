@@ -117,3 +117,13 @@ tests/
 ## Security note
 
 The plan-management API is intentionally simple and local. If the service is exposed through a reverse proxy, VPN or tunnel to untrusted users, add authentication/authorisation before allowing plan modifications.
+
+
+### Plan cost components
+
+Plan management now supports: 
+- daily supply charge as a fixed dollar amount per day (`daily_supply_dollars`)
+- optional monthly subscription/access fee (`monthly_subscription_dollars`), useful for wholesale products
+- optional CL1 and CL2 controlled-load rates
+
+The supplied meter format exposes total active import via `Active Amt` and does not split CL1/CL2 kWh. Therefore configured CL1/CL2 rates are retained for plan reference but are not included in calculated totals unless future meter data provides separate controlled-load registers.

@@ -1,4 +1,4 @@
-# Plan schema v0.2
+# Plan schema v0.3
 
 All plans:
 
@@ -9,13 +9,22 @@ All plans:
   "name":"Plan name",
   "effective_from":"2026-01-01",
   "effective_to":null,
-  "daily_supply_cents":110.0,
+  "daily_supply_dollars":1.10,
+  "monthly_subscription_dollars":0.0,
+  "controlled_load": {
+    "cl1_cents_per_kwh":null,
+    "cl2_cents_per_kwh":null
+  },
   "usage": {},
   "source_document":"",
   "source_url":"",
   "last_verified":"2026-09-23"
 }
 ```
+
+`daily_supply_dollars` is a fixed supply charge in dollars per calendar day. It is not a rate per kWh.
+
+`monthly_subscription_dollars` is an optional fixed monthly fee, useful for wholesale/spot plans that charge for access to the product. It is applied once for each calendar month represented by the uploaded meter data.
 
 ## Flat
 
@@ -46,6 +55,8 @@ Python weekday numbers are Monday=0 through Sunday=6.
 }
 ```
 
-`margin_cents_per_kwh` and `other_cents_per_kwh` are retailer-plan assumptions and must be verified from the plan documentation.
+The wholesale subscription is stored at plan level using `monthly_subscription_dollars`.
 
-The AEMO spot price is supplied separately because it varies by date and NEM region rather than being a fixed plan attribute.
+## Controlled load
+
+Some plans have separate CL1 and/or CL2 rates. These are stored as optional c/kWh values. The current meter export format supplied for this project reports total active import (`Active Amt`) but does not provide separate CL1/CL2 kWh, so those rates cannot be charged accurately and are deliberately excluded from the calculated total. The dashboard notes their presence.

@@ -67,9 +67,19 @@ def validate_plan(plan: dict) -> None:
         end = date.fromisoformat(str(end_raw))
         if end < start:
             raise ValueError("effective_to cannot be before effective_from")
-    daily = float(plan.get("daily_supply_cents", 0))
+    daily = float(plan.get("daily_supply_dollars", plan.get("daily_supply_cents", 0) / 100.0))
     if daily < 0:
         raise ValueError("Daily supply charge cannot be negative")
+    subscription = float(plan.get("monthly_subscription_dollars", 0))
+    if subscription < 0:
+        raise ValueError("Monthly subscription charge cannot be negative")
+    cl = plan.get("controlled_load", {})
+    if cl is not None:
+        if not isinstance(cl, dict):
+            raise ValueError("controlled_load must be an object")
+        for key in ("cl1_cents_per_kwh", "cl2_cents_per_kwh"):
+            if cl.get(key) is not None and float(cl.get(key)) < 0:
+                raise ValueError(f"{key} cannot be negative")
     usage = plan["usage"]
     if not isinstance(usage, dict) or usage.get("type") not in ALLOWED_TYPES:
         raise ValueError("usage.type must be flat, tou, or wholesale")

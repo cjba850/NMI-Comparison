@@ -261,14 +261,30 @@ def tou_rate(usage: dict, ts: datetime) -> tuple[str, float]:
     raise ValueError(f"No TOU period matches {ts.isoformat()}")
 
 
-def _base_result(plan: dict, year: int, selected: list[Interval], energy_cents: float, buckets: dict, notes: list[str], supply_days: int) -> dict:
-    supply = supply_days * float(plan.get("daily_supply_cents", 0))
+def _daily_supply_cents(plan: dict) -> float:
+    # v0.8 stores the supply charge as dollars/day. Keep the old cents/day
+    # field readable for backwards compatibility with existing plan files.
+    if "daily_supply_dollars" in plan:
+        return float(plan.get("daily_supply_dollars", 0)) * 100.0
+    return float(plan.get("daily_supply_cents", 0))
+
+def _monthly_subscription_cents(plan: dict) -> float:
+    return float(plan.get("monthly_subscription_dollars", 0)) * 100.0
+
+def _controlled_load_config(plan: dict) -> dict:
+    cfg = plan.get("controlled_load", {})
+    return cfg if isinstance(cfg, dict) else {}
+
+def _base_result(plan: dict, year: int, selected: list[Interval], energy_cents: float, buckets: dict, notes: list[str], supply_days: int, month_count: int = 0) -> dict:
+    supply = supply_days * _daily_supply_cents(plan)
+    subscription = month_count * _monthly_subscription_cents(plan)
     usage_kwh = sum(x.kwh for x in selected)
     return {
         "provider": plan["provider"], "plan": plan["name"], "plan_id": plan["id"], "type": plan["usage"]["type"], "year": year,
         "days_with_data": supply_days, "intervals": len(selected), "usage_kwh": round(usage_kwh, 3),
         "energy_cost": round(energy_cents / 100, 2), "supply_cost": round(supply / 100, 2),
-        "total_cost": round((energy_cents + supply) / 100, 2),
+        "subscription_cost": round(subscription / 100, 2),
+        "total_cost": round((energy_cents + supply + subscription) / 100, 2),
         "periods": {n: {"kwh": round(v["kwh"], 3), "cost": round(v["cost_cents"] / 100, 2), "rate_cents_per_kwh": round(v["rate_cents_per_kwh"], 5)} for n, v in buckets.items()},
         "notes": notes,
     }
@@ -295,9 +311,14 @@ def calculate_flat_or_tou(intervals: list[Interval], plan: dict, year: int) -> d
         b = buckets.setdefault(name, {"kwh": 0.0, "cost_cents": 0.0, "rate_cents_per_kwh": rate})
         b["kwh"] += item.kwh
         b["cost_cents"] += cost
-    days = len({x.timestamp.astimezone(SYDNEY).date() for x in selected})
+    days_set = {x.timestamp.astimezone(SYDNEY).date() for x in selected}
+    days = len(days_set)
+    months = len({d.strftime("%Y-%m") for d in days_set})
     notes = ["Supply charge uses calendar days represented in the uploaded data."]
-    return _base_result(plan, year, selected, energy, buckets, notes, days)
+    cl = _controlled_load_config(plan)
+    if cl.get("cl1_cents_per_kwh") is not None or cl.get("cl2_cents_per_kwh") is not None:
+        notes.append("Controlled-load rates are configured, but this calculation only applies them when the uploaded meter data identifies separate CL1/CL2 registers. The supplied import-only data does not split controlled-load kWh.")
+    return _base_result(plan, year, selected, energy, buckets, notes, days, months)
 
 
 def _spot_map(prices: list[SpotPrice], region: str) -> dict[datetime, float]:
@@ -351,17 +372,22 @@ def calculate_wholesale(intervals: list[Interval], plan: dict, year: int, prices
         b["cost_cents"] += cost
     if not energy and missing:
         raise ValueError(f"No matching AEMO spot prices for region {region} and {year}")
-    days = len({x.timestamp.astimezone(SYDNEY).date() for x in selected})
+    days_set = {x.timestamp.astimezone(SYDNEY).date() for x in selected}
+    days = len(days_set)
+    months = len({d.strftime("%Y-%m") for d in days_set})
     notes = [
         f"Wholesale calculation uses AEMO RRP for region {region}.",
         f"Wholesale retailer add-ons: {margin:.4f} c/kWh margin + {other:.4f} c/kWh other component.",
     ]
+    monthly_fee = float(plan.get("monthly_subscription_dollars", 0))
+    if monthly_fee:
+        notes.append(f"Wholesale subscription/access fee: ${monthly_fee:.2f} per month, applied for each month represented in the uploaded data.")
     if any(x.timestamp.astimezone(SYDNEY).minute % 5 for x in selected):
         notes.append("NMI intervals are not 5-minute aligned; matching uses the average of available five-minute prices across each 30-minute interval.")
     if missing:
         notes.append(f"{missing} NMI intervals had no matching spot price and were excluded from wholesale energy cost.")
-    result = _base_result(plan, year, selected, energy, buckets, notes, days)
-    result["wholesale"] = {"region": region, "spot_intervals": len(spot), "missing_intervals": missing, "margin_cents_per_kwh": margin, "other_cents_per_kwh": other}
+    result = _base_result(plan, year, selected, energy, buckets, notes, days, months)
+    result["wholesale"] = {"region": region, "spot_intervals": len(spot), "missing_intervals": missing, "margin_cents_per_kwh": margin, "other_cents_per_kwh": other, "monthly_subscription_dollars": float(plan.get("monthly_subscription_dollars", 0))}
     return result
 
 

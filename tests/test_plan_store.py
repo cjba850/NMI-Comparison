@@ -29,3 +29,11 @@ def test_validate_bad_dates():
 def test_validate_tou():
     p=flat_plan('tou'); p['usage']={'type':'tou','periods':[{'name':'peak','days':[0,1,2,3,4],'start':'14:00','end':'20:00','cents_per_kwh':45}]}
     validate_plan(p)
+
+
+def test_plan_store_accepts_dollar_supply_subscription_and_controlled_load(tmp_path):
+    from app.plan_store import PlanStore
+    plan = {"id":"fees-plan","provider":"Test","name":"Fees","effective_from":"2026-01-01","effective_to":None,"daily_supply_dollars":1.25,"monthly_subscription_dollars":9.95,"controlled_load":{"cl1_cents_per_kwh":15,"cl2_cents_per_kwh":10},"usage":{"type":"flat","cents_per_kwh":30}}
+    store = PlanStore(tmp_path/'plans.json')
+    store.save(plan)
+    assert store.get('fees-plan')['daily_supply_dollars'] == 1.25

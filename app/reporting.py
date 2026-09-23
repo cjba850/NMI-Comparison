@@ -41,11 +41,12 @@ def _plan_monthly_costs(intervals, plan, year, spot_prices=None, region=None):
                 continue
         m["energy_cost_cents"] += item.kwh * rate
 
-    supply = float(plan.get("daily_supply_cents", 0))
+    supply = float(plan.get("daily_supply_dollars", plan.get("daily_supply_cents", 0) / 100.0)) * 100
     out = []
     for key in sorted(months):
         m = months[key]
-        out.append({"month": key, "kwh": round(m["kwh"], 3), "energy_cost": round(m["energy_cost_cents"] / 100, 2), "supply_cost": round(len(m["days"]) * supply / 100, 2), "total_cost": round((m["energy_cost_cents"] + len(m["days"]) * supply) / 100, 2)})
+        subscription = float(plan.get("monthly_subscription_dollars", 0)) * 100
+        out.append({"month": key, "kwh": round(m["kwh"], 3), "energy_cost": round(m["energy_cost_cents"] / 100, 2), "supply_cost": round(len(m["days"]) * supply / 100, 2), "subscription_cost": round(subscription / 100, 2), "total_cost": round((m["energy_cost_cents"] + len(m["days"]) * supply + subscription) / 100, 2)})
     return out
 
 

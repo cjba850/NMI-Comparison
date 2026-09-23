@@ -5,10 +5,18 @@
     "name": "Example Flat 2026",
     "effective_from": "2026-01-01",
     "effective_to": null,
-    "daily_supply_cents": 110.0,
-    "usage": {"type": "flat", "cents_per_kwh": 30.0},
+    "usage": {
+      "type": "flat",
+      "cents_per_kwh": 30.0
+    },
     "solar_feed_in_cents_per_kwh": 5.0,
-    "source_document": "Fictional example"
+    "source_document": "Fictional example",
+    "daily_supply_dollars": 1.1,
+    "monthly_subscription_dollars": 0.0,
+    "controlled_load": {
+      "cl1_cents_per_kwh": null,
+      "cl2_cents_per_kwh": null
+    }
   },
   {
     "id": "example-tou-2026",
@@ -16,16 +24,47 @@
     "name": "Example TOU 2026",
     "effective_from": "2026-01-01",
     "effective_to": null,
-    "daily_supply_cents": 105.0,
     "usage": {
       "type": "tou",
       "periods": [
-        {"name": "peak", "days": [0,1,2,3,4], "start": "14:00", "end": "20:00", "cents_per_kwh": 42.0},
-        {"name": "offpeak", "days": [0,1,2,3,4,5,6], "start": "20:00", "end": "14:00", "cents_per_kwh": 20.0}
+        {
+          "name": "peak",
+          "days": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "start": "14:00",
+          "end": "20:00",
+          "cents_per_kwh": 42.0
+        },
+        {
+          "name": "offpeak",
+          "days": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "start": "20:00",
+          "end": "14:00",
+          "cents_per_kwh": 20.0
+        }
       ]
     },
     "solar_feed_in_cents_per_kwh": 5.0,
-    "source_document": "Fictional example"
+    "source_document": "Fictional example",
+    "daily_supply_dollars": 1.05,
+    "monthly_subscription_dollars": 0.0,
+    "controlled_load": {
+      "cl1_cents_per_kwh": null,
+      "cl2_cents_per_kwh": null
+    }
   },
   {
     "id": "example-wholesale-2026",
@@ -33,13 +72,18 @@
     "name": "Example Spot + Margin 2026",
     "effective_from": "2026-01-01",
     "effective_to": null,
-    "daily_supply_cents": 120.0,
     "usage": {
       "type": "wholesale",
       "margin_cents_per_kwh": 8.0,
       "other_cents_per_kwh": 0.0
     },
     "solar_feed_in_cents_per_kwh": 0.0,
-    "source_document": "Fictional example"
+    "source_document": "Fictional example",
+    "daily_supply_dollars": 1.2,
+    "monthly_subscription_dollars": 12.95,
+    "controlled_load": {
+      "cl1_cents_per_kwh": null,
+      "cl2_cents_per_kwh": null
+    }
   }
 ]

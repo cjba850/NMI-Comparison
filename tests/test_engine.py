@@ -71,3 +71,24 @@ NSW1,1/01/2026 0:05,6713.88,999.99,OTHER
     prices = parse_aemo_spot_csv(text)
     assert len(prices) == 1
     assert prices[0].rrp_mwh == 71.24
+
+
+def test_daily_supply_is_dollars_and_monthly_subscription_applies():
+    from app.engine import calculate_plan, Interval
+    from datetime import datetime
+    plan = {"id":"test-fees","provider":"Test","name":"Fees","effective_from":"2026-01-01","effective_to":None,"daily_supply_dollars":1.10,"monthly_subscription_dollars":12.50,"usage":{"type":"flat","cents_per_kwh":20}}
+    intervals = [Interval(datetime(2026,1,1,0,0),1.0), Interval(datetime(2026,2,1,0,0),1.0)]
+    result = calculate_plan(intervals, plan, 2026)
+    assert result["energy_cost"] == 0.4
+    assert result["supply_cost"] == 2.2
+    assert result["subscription_cost"] == 25.0
+    assert result["total_cost"] == 27.6
+
+
+def test_controlled_load_rates_are_reported_but_not_applied_without_separate_registers():
+    from app.engine import calculate_plan, Interval
+    from datetime import datetime
+    plan = {"id":"test-cl","provider":"Test","name":"CL","effective_from":"2026-01-01","effective_to":None,"daily_supply_dollars":0,"controlled_load":{"cl1_cents_per_kwh":12,"cl2_cents_per_kwh":8},"usage":{"type":"flat","cents_per_kwh":20}}
+    result = calculate_plan([Interval(datetime(2026,1,1,0,0),2.0)], plan, 2026)
+    assert result["total_cost"] == 0.4
+    assert any("Controlled-load rates are configured" in n for n in result["notes"])

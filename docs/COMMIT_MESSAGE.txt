@@ -1,8 +1,9 @@
-fix: support AEMO SETTLEMENTDATE trading-price CSV exports
+feat: improve electricity plan cost components
 
-- parse AEMO SETTLEMENTDATE values in d/m/YYYY H:MM format
-- support REGION, SETTLEMENTDATE, TOTALDEMAND, RRP and PERIODTYPE exports
-- accept TRADE/TRADING period types and ignore other period types
-- convert settlement-end timestamps to interval-start timestamps for matching NMI data
-- normalise AEMO region identifiers
-- add parser regression tests for the supplied AEMO CSV format
+- store daily supply as a dollar-per-day charge
+- add optional monthly wholesale subscription/access fee
+- add optional CL1 and CL2 controlled-load rates
+- explicitly exclude CL1/CL2 from totals when meter data does not split those registers
+- show supply and monthly fees in plan management and calculation detail
+- retain compatibility with the previous daily_supply_cents field
+- update plan schema and tests
