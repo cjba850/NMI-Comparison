@@ -9,7 +9,7 @@ def _month_key(ts):
 
 def _plan_monthly_costs(intervals, plan, year, spot_prices=None, region=None):
     from .engine import calculate_plan
-    from .engine import applies, tou_rate, _spot_map
+    from .engine import applies, tou_rate, _spot_map, _demand_charge, Interval
 
     selected = [x for x in intervals if x.timestamp.year == year and x.register.lower() == "import"]
     months = defaultdict(lambda: {"kwh": 0.0, "energy_cost_cents": 0.0, "days": set()})
@@ -42,11 +42,15 @@ def _plan_monthly_costs(intervals, plan, year, spot_prices=None, region=None):
         m["energy_cost_cents"] += item.kwh * rate
 
     supply = float(plan.get("daily_supply_dollars", plan.get("daily_supply_cents", 0) / 100.0)) * 100
+    demand_selected = [x for x in intervals if x.timestamp.year == year and x.register.lower() == "import" and applies(plan, x.timestamp.date())]
+    _, demand_detail, _ = _demand_charge(plan, demand_selected)
+    demand_by_month = {x["month"]: x["charge"] for x in demand_detail.get("months", [])}
     out = []
     for key in sorted(months):
         m = months[key]
         subscription = float(plan.get("monthly_subscription_dollars", 0)) * 100
-        out.append({"month": key, "kwh": round(m["kwh"], 3), "energy_cost": round(m["energy_cost_cents"] / 100, 2), "supply_cost": round(len(m["days"]) * supply / 100, 2), "subscription_cost": round(subscription / 100, 2), "total_cost": round((m["energy_cost_cents"] + len(m["days"]) * supply + subscription) / 100, 2)})
+        demand_cost = float(demand_by_month.get(key, 0))
+        out.append({"month": key, "kwh": round(m["kwh"], 3), "energy_cost": round(m["energy_cost_cents"] / 100, 2), "supply_cost": round(len(m["days"]) * supply / 100, 2), "subscription_cost": round(subscription / 100, 2), "demand_cost": round(demand_cost, 2), "total_cost": round((m["energy_cost_cents"] + len(m["days"]) * supply + subscription + demand_cost * 100) / 100, 2)})
     return out
 
 
@@ -58,7 +62,7 @@ def plan_comparison(results):
     lowest = ordered[0]["total_cost"]
     return [{
         "plan_id": r["plan_id"], "provider": r["provider"], "plan": r["plan"], "type": r["type"],
-        "total_cost": r["total_cost"], "energy_cost": r["energy_cost"], "supply_cost": r["supply_cost"],
+        "total_cost": r["total_cost"], "energy_cost": r["energy_cost"], "supply_cost": r["supply_cost"], "subscription_cost": r.get("subscription_cost", 0), "demand_cost": r.get("demand_cost", 0),
         "usage_kwh": r["usage_kwh"], "effective_cents_per_kwh": round(r["total_cost"] * 100 / r["usage_kwh"], 4) if r["usage_kwh"] else None,
         "difference_from_lowest": round(r["total_cost"] - lowest, 2),
         "savings_vs_lowest": round(lowest - r["total_cost"], 2),

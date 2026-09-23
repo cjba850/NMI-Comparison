@@ -30,3 +30,18 @@ def test_recommendation_and_comparison():
     assert c[0]["plan_id"] == "a"
     assert c[1]["difference_from_lowest"] == 10
     assert recommendation(results)["plan_id"] == "a"
+
+def test_monthly_cost_report_includes_monthly_demand_charge():
+    from app.reporting import _plan_monthly_costs
+    rows = [
+        Interval(datetime(2026,1,5,17,0,tzinfo=SYDNEY), 2.0),
+        Interval(datetime(2026,1,5,17,30,tzinfo=SYDNEY), 5.0),
+    ]
+    plan = {
+        "id":"demand-report", "provider":"Test", "name":"Demand", "effective_from":"2026-01-01", "effective_to":None,
+        "daily_supply_dollars":0, "usage":{"type":"flat","cents_per_kwh":0},
+        "demand":{"enabled":True,"rate_dollars_per_kw_per_day":0.25,"windows":[{"name":"Peak","days":[0,1,2,3,4],"start":"17:00","end":"18:00"}]},
+    }
+    result = _plan_monthly_costs(rows, plan, 2026)
+    assert result[0]["demand_cost"] == 77.5
+    assert result[0]["total_cost"] == 77.5

@@ -1,4 +1,4 @@
-# NMI Energy Plan Calculator v0.6
+# NMI Energy Plan Calculator v0.11
 
 A standalone FastAPI web service for replaying actual NMI electricity consumption against locally maintained electricity plans.
 
@@ -42,7 +42,7 @@ No plan data is sent to a cloud database.
 Supported plan types:
 
 1. **Flat** — one usage rate plus daily supply charge.
-2. **TOU** — any number of named periods with weekday selection, start/end times and rates.
+2. **TOU** — any number of named periods with weekday/month selection, start/end times and rates.
 3. **Wholesale / spot** — AEMO RRP plus a fixed retailer margin and other per-kWh component.
 
 Historical tariff versions are supported using `effective_from` and `effective_to`. This is important when comparing five months of 2025 usage against the actual tariff that applied during those dates rather than today's tariff.
@@ -77,7 +77,21 @@ Supply charges are currently calculated for the calendar days represented in the
 
 For wholesale plans, 30-minute NMI intervals are matched to the average of the six corresponding five-minute AEMO RRP values. The AEMO importer accepts common `REGION,SETTLEMENTDATE,TOTALDEMAND,RRP,PERIODTYPE` exports, including Australian `d/m/YYYY H:MM` timestamps. For `SETTLEMENTDATE` exports, the settlement timestamp is treated as the end of the five-minute interval and converted to the interval start before matching to NMI usage. This is an explicit approximation because the meter consumption is supplied at 30-minute resolution.
 
-Actual retailer bills can contain additional charges, discounts, taxes, controlled-load components, demand charges, green-power products and other terms. Add these to the plan schema as required before treating the result as a bill reproduction.
+Actual retailer bills can contain additional charges, discounts, taxes, controlled-load components, demand charges, green-power products and other terms. The plan model now supports optional monthly peak-demand charges, but other bill-specific components still need to be configured before treating the result as a bill reproduction.
+
+## Demand charges
+
+A plan can optionally include a monthly peak-demand charge for any plan type (Flat, TOU or Wholesale). Configure one or more demand windows using weekdays, optional months and start/end times.
+
+For each calendar month, the calculator finds the highest complete 30-minute import block inside the configured demand window(s), converts the block to average kW (`30-minute kWh × 2`), and calculates:
+
+```text
+monthly demand charge = peak kW × demand rate ($/kW/day) × calendar days in month
+```
+
+This follows the common demand-tariff structure documented by Momentum Energy, where the highest half-hour during the demand window sets the month's demand charge and the result is multiplied by the number of days in the month.
+
+The demand detail in the calculation result shows the month, peak date/time, 30-minute kWh, calculated kW, applicable demand window and charge. Seasonal demand windows are supported, so a plan can have different demand periods for summer and winter.
 
 ## Tests
 
@@ -127,3 +141,9 @@ Plan management now supports:
 - optional CL1 and CL2 controlled-load rates
 
 The supplied meter format exposes total active import via `Active Amt` and does not split CL1/CL2 kWh. Therefore configured CL1/CL2 rates are retained for plan reference but are not included in calculated totals unless future meter data provides separate controlled-load registers.
+
+### Demand surcharge
+
+Plans can optionally include a demand surcharge, independent of whether the plan is Flat, TOU or Wholesale. When enabled, the calculator finds the highest complete 30-minute block on each local calendar day, converts block kWh to average kW (`kWh × 2`), and charges that demand at a configured `$ / kW` rate. 5-minute and 15-minute source data are aggregated into 30-minute blocks. Incomplete 30-minute blocks are excluded so missing meter data cannot artificially reduce the daily peak.
+
+Demand is reported separately from energy, supply and subscription charges, including the daily peak block and calculated kW.

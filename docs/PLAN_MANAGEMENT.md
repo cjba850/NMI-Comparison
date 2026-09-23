@@ -1,6 +1,6 @@
 # Local plan management
 
-Version 0.6 adds a browser interface for maintaining the electricity plans used by the calculator.
+Version 0.11 includes a browser interface for maintaining the electricity plans used by the calculator.
 
 ## Where plans are stored
 
@@ -29,7 +29,7 @@ The editor supports:
 - Effective-from and effective-to dates
 - Daily supply charge
 - Flat usage rate
-- Multiple TOU periods
+- Multiple TOU periods with optional month restrictions
 - Wholesale/spot margin and other per-kWh components
 - Source URL
 - Source/document notes
@@ -87,3 +87,24 @@ The API writes atomically and keeps the previous JSON as `.backup`.
 ## Security
 
 This version intentionally uses a local JSON store rather than a database or cloud service. If the web service is exposed beyond a trusted network, add authentication and restrict write access to `/api/plans` before exposing it publicly.
+
+
+### Demand surcharge
+
+The plan editor can enable a **monthly peak demand surcharge** for Flat, TOU and Wholesale plans.
+
+Configure:
+
+- demand rate as **$/kW/day** (for example `$0.25/kW/day` = `25c/kW/day`)
+- one or more demand windows
+- weekdays for each window
+- optional months for seasonal demand windows
+- start and end times
+
+For each calendar month, the calculator finds the highest complete 30-minute import block within the demand window(s). A 30-minute block is converted to average demand using `kWh × 2`, then the monthly charge is: `peak kW × demand rate × calendar days in month`.
+
+This matches the structure described by Momentum Energy for demand tariffs: the highest half-hour during the demand window sets the month's demand charge, with the basic tariff calculation multiplying peak demand by the demand rate and number of days in the month.
+
+The result reports the monthly peak block, date/time, kWh, kW, selected demand window and calculated charge. For incomplete uploaded months, the peak is still based only on available meter data, while the configured tariff rate is multiplied by the full calendar days in that month; the detail makes this visible.
+
+Older plans using `rate_dollars_per_kw` remain readable. If no demand windows are present, they are treated as an all-day window for backwards compatibility; new plans should explicitly configure the applicable demand window(s).

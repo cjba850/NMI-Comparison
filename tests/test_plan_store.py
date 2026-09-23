@@ -59,3 +59,15 @@ def test_reject_invalid_tou_month():
     p=flat_plan('bad-season')
     p['usage']={'type':'tou','periods':[{'name':'bad','months':[0,13],'days':[0,1,2,3,4],'start':'14:00','end':'20:00','cents_per_kwh':45}]}
     with pytest.raises(ValueError): validate_plan(p)
+
+
+def test_validate_demand_surcharge():
+    p=flat_plan('demand')
+    p['demand']={'enabled':True,'rate_dollars_per_kw':12.50}
+    validate_plan(p)
+
+
+def test_reject_negative_demand_rate():
+    p=flat_plan('bad-demand')
+    p['demand']={'enabled':True,'rate_dollars_per_kw':-1}
+    with pytest.raises(ValueError): validate_plan(p)

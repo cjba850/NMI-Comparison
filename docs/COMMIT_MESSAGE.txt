@@ -1,9 +1,14 @@
-feat: improve electricity plan cost components
+feat: correct demand tariff calculation to monthly peak demand windows
 
-- store daily supply as a dollar-per-day charge
-- add optional monthly wholesale subscription/access fee
-- add optional CL1 and CL2 controlled-load rates
-- explicitly exclude CL1/CL2 from totals when meter data does not split those registers
-- show supply and monthly fees in plan management and calculation detail
-- retain compatibility with the previous daily_supply_cents field
-- update plan schema and tests
+- calculate demand from the highest complete 30-minute import block per calendar month
+- restrict demand calculation to configurable weekday, month and time windows
+- support seasonal demand windows
+- calculate monthly demand as peak kW x rate ($/kW/day) x calendar days
+- support demand charges for flat, TOU and wholesale plans
+- aggregate 5-minute and 15-minute meter intervals into 30-minute demand blocks
+- exclude incomplete 30-minute demand blocks
+- show monthly peak demand detail and charges in calculation results
+- update plan management UI and schema for demand windows
+- include demand charges in monthly cost reporting
+- retain backwards compatibility with the previous demand rate field
+- add regression tests for monthly, seasonal and wholesale demand tariffs

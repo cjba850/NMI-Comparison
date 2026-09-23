@@ -1,4 +1,4 @@
-# Plan schema v0.3
+# Plan schema v0.11
 
 All plans:
 
@@ -60,3 +60,37 @@ The wholesale subscription is stored at plan level using `monthly_subscription_d
 ## Controlled load
 
 Some plans have separate CL1 and/or CL2 rates. These are stored as optional c/kWh values. The current meter export format supplied for this project reports total active import (`Active Amt`) but does not provide separate CL1/CL2 kWh, so those rates cannot be charged accurately and are deliberately excluded from the calculated total. The dashboard notes their presence.
+
+## Optional monthly peak demand surcharge
+
+Demand is a plan-level charge and can therefore be enabled for any plan type (`flat`, `tou`, or `wholesale`):
+
+```json
+"demand": {
+  "enabled": true,
+  "rate_dollars_per_kw_per_day": 0.25,
+  "windows": [
+    {
+      "name": "Weekday peak",
+      "days": [0,1,2,3,4],
+      "months": [12,1,2,3],
+      "start": "17:00",
+      "end": "20:00"
+    }
+  ]
+}
+```
+
+For each calendar month, the calculator finds the highest **complete 30-minute import block** whose start time falls inside one of the configured demand windows. A 30-minute block containing `5.0 kWh` represents `10.0 kW` of average demand (`5.0 × 2`). The monthly demand charge is then:
+
+```text
+peak kW × demand rate ($/kW/day) × calendar days in month
+```
+
+For example, `10 kW × $0.25/kW/day × 31 days = $77.50` for January.
+
+Demand windows support the same weekday numbering as TOU periods (Monday=0 through Sunday=6) and optional month restrictions. Multiple windows allow seasonal structures such as summer and winter demand periods.
+
+For 5-minute or 15-minute meter data, intervals are aggregated into aligned 30-minute blocks. Incomplete blocks are excluded. The resulting monthly demand charge is reported separately as `demand_cost`, with per-month detail in `demand.months`.
+
+For backwards compatibility, `rate_dollars_per_kw` is still accepted as an alias and an enabled demand definition with no windows is treated as an all-day demand window. New plans should use `rate_dollars_per_kw_per_day` and explicit demand windows.

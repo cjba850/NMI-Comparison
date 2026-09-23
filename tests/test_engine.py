@@ -124,3 +124,75 @@ def test_tou_seasonal_months_override_same_hour():
     assert r["periods"]["summer peak"]["kwh"] == 2
     assert r["periods"]["shoulder"]["kwh"] == 2
     assert r["total_cost"] == 1.6
+
+
+def test_monthly_peak_demand_uses_highest_block_in_demand_window_and_calendar_days():
+    intervals = [
+        Interval(datetime(2026, 1, 5, 17, 0, tzinfo=SYDNEY), 2.0),  # 4 kW, inside window
+        Interval(datetime(2026, 1, 5, 17, 30, tzinfo=SYDNEY), 5.0), # 10 kW monthly peak
+        Interval(datetime(2026, 1, 5, 18, 0, tzinfo=SYDNEY), 20.0), # outside window, ignored
+        Interval(datetime(2026, 1, 6, 17, 30, tzinfo=SYDNEY), 4.0), # 8 kW
+    ]
+    plan = {
+        "id":"demand", "provider":"Test", "name":"Demand", "effective_from":"2026-01-01", "effective_to":None,
+        "daily_supply_dollars":0, "usage":{"type":"flat","cents_per_kwh":0},
+        "demand":{"enabled":True,"rate_dollars_per_kw_per_day":0.25,"windows":[
+            {"name":"Peak demand","days":[0,1,2,3,4],"months":[1],"start":"17:00","end":"18:00"}
+        ]},
+    }
+    r = calculate_plan(intervals, plan, 2026)
+    # January has 31 days: 10kW × $0.25/kW/day × 31 = $77.50.
+    assert r["demand_cost"] == 77.5
+    assert r["total_cost"] == 77.5
+    assert r["demand"]["months"][0]["kw"] == 10.0
+    assert r["demand"]["months"][0]["calendar_days"] == 31
+
+
+def test_monthly_peak_demand_can_have_seasonal_windows():
+    intervals = [
+        Interval(datetime(2026, 1, 5, 17, 0, tzinfo=SYDNEY), 3.0),  # 6 kW summer
+        Interval(datetime(2026, 7, 6, 17, 0, tzinfo=SYDNEY), 4.0),  # 8 kW winter
+    ]
+    plan = {
+        "id":"seasonal-demand", "provider":"Test", "name":"Seasonal Demand", "effective_from":"2026-01-01", "effective_to":None,
+        "daily_supply_dollars":0, "usage":{"type":"flat","cents_per_kwh":0},
+        "demand":{"enabled":True,"rate_dollars_per_kw_per_day":0.10,"windows":[
+            {"name":"Summer","days":[0,1,2,3,4],"months":[1,2,3],"start":"17:00","end":"20:00"},
+            {"name":"Winter","days":[0,1,2,3,4],"months":[6,7,8],"start":"16:00","end":"19:00"},
+        ]},
+    }
+    r = calculate_plan(intervals, plan, 2026)
+    # Jan: 6kW × $0.10 × 31 = $18.60; Jul: 8kW × $0.10 × 31 = $24.80.
+    assert r["demand_cost"] == 43.4
+    assert [x["month"] for x in r["demand"]["months"]] == ["2026-01", "2026-07"]
+
+
+def test_monthly_peak_demand_aggregates_15min_data():
+    intervals = [
+        Interval(datetime(2026, 1, 5, 17, 0, tzinfo=SYDNEY), 1.0),
+        Interval(datetime(2026, 1, 5, 17, 15, tzinfo=SYDNEY), 2.0),
+        Interval(datetime(2026, 1, 5, 17, 30, tzinfo=SYDNEY), 1.0),
+        Interval(datetime(2026, 1, 5, 17, 45, tzinfo=SYDNEY), 1.0),
+    ]
+    plan = {
+        "id":"demand15", "provider":"Test", "name":"Demand 15", "effective_from":"2026-01-01", "effective_to":None,
+        "daily_supply_dollars":0, "usage":{"type":"flat","cents_per_kwh":0},
+        "demand":{"enabled":True,"rate_dollars_per_kw_per_day":0.10,"windows":[{"name":"Peak","days":[0,1,2,3,4],"start":"17:00","end":"18:00"}]},
+    }
+    r = calculate_plan(intervals, plan, 2026)
+    # Highest block is 3kWh => 6kW; January has 31 days => $18.60.
+    assert r["demand_cost"] == 18.6
+
+
+def test_demand_can_apply_to_wholesale_plan_with_monthly_peak():
+    intervals = [Interval(datetime(2026, 1, 5, 17, 0, tzinfo=SYDNEY), 2.0)]
+    prices = [SpotPrice(datetime(2026, 1, 5, 17, i * 5, tzinfo=SYDNEY), "NSW1", 0) for i in range(6)]
+    plan = {
+        "id":"wh-demand", "provider":"Test", "name":"Wholesale Demand", "effective_from":"2026-01-01", "effective_to":None,
+        "daily_supply_dollars":0, "usage":{"type":"wholesale","margin_cents_per_kwh":0,"other_cents_per_kwh":0},
+        "demand":{"enabled":True,"rate_dollars_per_kw_per_day":0.50,"windows":[{"name":"Peak","days":[0,1,2,3,4],"start":"17:00","end":"18:00"}]},
+    }
+    r = calculate_plan(intervals, plan, 2026, prices, "NSW1")
+    # 2kWh => 4kW; Jan => 4 × $0.50 × 31 = $62.
+    assert r["demand_cost"] == 62.0
+

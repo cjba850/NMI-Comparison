@@ -279,17 +279,148 @@ def _controlled_load_config(plan: dict) -> dict:
     cfg = plan.get("controlled_load", {})
     return cfg if isinstance(cfg, dict) else {}
 
+def _demand_config(plan: dict) -> dict:
+    cfg = plan.get("demand", {})
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _demand_window_matches(window: dict, ts: datetime) -> bool:
+    months = window.get("months")
+    if months is not None and ts.month not in [int(m) for m in months]:
+        return False
+    days = window.get("days", list(range(7)))
+    if ts.weekday() not in [int(d) for d in days]:
+        return False
+    start = time.fromisoformat(window["start"])
+    end = time.fromisoformat(window["end"])
+    current = ts.timetz().replace(tzinfo=None)
+    return (start <= current < end) if start <= end else (current >= start or current < end)
+
+
+def _demand_charge(plan: dict, selected: list[Interval]) -> tuple[float, dict, list[str]]:
+    """Calculate a monthly peak-demand charge.
+
+    For each calendar month, find the highest complete 30-minute import block
+    that falls inside one of the configured demand windows. Convert the block
+    kWh to average kW (kWh * 2), then charge:
+
+        peak kW × demand rate ($/kW/day) × calendar days in month
+
+    Demand windows can be restricted by months, weekdays and time of day.
+    """
+    cfg = _demand_config(plan)
+    if not cfg.get("enabled", False):
+        return 0.0, {"enabled": False, "months": [], "windows": []}, []
+
+    # v0.11: rate is explicitly per kW per day, matching common tariff
+    # structures where the monthly charge is peak kW × rate × days in month.
+    rate = float(cfg.get("rate_dollars_per_kw_per_day", cfg.get("rate_dollars_per_kw", 0)))
+    if rate < 0:
+        raise ValueError("Demand rate cannot be negative")
+
+    windows = cfg.get("windows") or [{"name": "All day", "days": list(range(7)), "start": "00:00", "end": "00:00"}]
+    if not isinstance(windows, list):
+        raise ValueError("Demand windows must be a list")
+
+    if not selected:
+        return 0.0, {"enabled": True, "rate_dollars_per_kw_per_day": rate, "months": [], "windows": windows}, ["Demand surcharge is enabled, but no intervals were available."]
+
+    # Determine source interval length from the data. Demand can be calculated
+    # accurately when the source interval divides 30 minutes.
+    timestamps = sorted({x.timestamp.astimezone(SYDNEY).replace(second=0, microsecond=0) for x in selected})
+    deltas = [(b - a).total_seconds() / 60 for a, b in zip(timestamps, timestamps[1:]) if b > a]
+    short_deltas = [d for d in deltas if d <= 30]
+    source_minutes = min(short_deltas) if short_deltas else 30.0
+    if source_minutes <= 0 or 30 % source_minutes != 0:
+        raise ValueError("Demand surcharge requires meter intervals that divide evenly into 30 minutes (for example 5, 15 or 30 minutes).")
+    expected = int(round(30 / source_minutes))
+
+    # Group consumption into aligned local 30-minute blocks.
+    blocks: dict[tuple[date, datetime], dict[str, float | int]] = {}
+    for item in selected:
+        ts = item.timestamp.astimezone(SYDNEY)
+        block_start = ts.replace(minute=(ts.minute // 30) * 30, second=0, microsecond=0)
+        key = (ts.date(), block_start)
+        block = blocks.setdefault(key, {"kwh": 0.0, "count": 0})
+        block["kwh"] = float(block["kwh"]) + item.kwh
+        block["count"] = int(block["count"]) + 1
+
+    # For each month, find the maximum complete block that is inside a demand
+    # window. A month is charged once, using the number of calendar days in it.
+    monthly_peak: dict[str, dict] = {}
+    for (d, start), block in blocks.items():
+        if int(block["count"]) < expected:
+            continue
+        # Test the start of the 30-minute block. A demand window ending at
+        # 18:00 therefore includes the 17:30-18:00 block but not 18:00-18:30.
+        ts = start
+        matching_windows = [w for w in windows if _demand_window_matches(w, ts)]
+        if not matching_windows:
+            continue
+        kwh = float(block["kwh"])
+        kw = kwh * 2.0
+        month_key = d.strftime("%Y-%m")
+        current = monthly_peak.get(month_key)
+        if current is None or kw > current["kw"]:
+            names = [str(w.get("name", "Demand")) for w in matching_windows]
+            monthly_peak[month_key] = {
+                "month": month_key,
+                "block_start": start.isoformat(),
+                "date": d.isoformat(),
+                "kwh": kwh,
+                "kw": kw,
+                "window": ", ".join(names),
+            }
+
+    from calendar import monthrange
+    detail_months = []
+    total_cents = 0.0
+    for month_key, peak in sorted(monthly_peak.items()):
+        year, month = map(int, month_key.split("-"))
+        days_in_month = monthrange(year, month)[1]
+        charge_dollars = peak["kw"] * rate * days_in_month
+        total_cents += charge_dollars * 100
+        detail_months.append({
+            "month": month_key,
+            "calendar_days": days_in_month,
+            "peak_date": peak["date"],
+            "block_start": peak["block_start"],
+            "kwh": round(peak["kwh"], 3),
+            "kw": round(peak["kw"], 3),
+            "window": peak["window"],
+            "charge": round(charge_dollars, 2),
+        })
+
+    notes = [
+        f"Demand surcharge: highest complete 30-minute import block within the configured demand windows for each month.",
+        f"Demand rate: ${rate:.4f}/kW/day × calendar days in each month.",
+    ]
+    if source_minutes < 30:
+        notes.append(f"Demand blocks were aggregated from {source_minutes:g}-minute meter intervals.")
+    if not detail_months:
+        notes.append("No complete 30-minute import blocks fell within the configured demand windows.")
+
+    return total_cents, {
+        "enabled": True,
+        "rate_dollars_per_kw_per_day": rate,
+        "windows": windows,
+        "months": detail_months,
+    }, notes
+
 def _base_result(plan: dict, year: int, selected: list[Interval], energy_cents: float, buckets: dict, notes: list[str], supply_days: int, month_count: int = 0) -> dict:
     supply = supply_days * _daily_supply_cents(plan)
     subscription = month_count * _monthly_subscription_cents(plan)
+    demand_cents, demand_detail, demand_notes = _demand_charge(plan, selected)
+    notes = notes + demand_notes
     usage_kwh = sum(x.kwh for x in selected)
     return {
         "provider": plan["provider"], "plan": plan["name"], "plan_id": plan["id"], "type": plan["usage"]["type"], "year": year,
         "days_with_data": supply_days, "intervals": len(selected), "usage_kwh": round(usage_kwh, 3),
         "energy_cost": round(energy_cents / 100, 2), "supply_cost": round(supply / 100, 2),
-        "subscription_cost": round(subscription / 100, 2),
-        "total_cost": round((energy_cents + supply + subscription) / 100, 2),
+        "subscription_cost": round(subscription / 100, 2), "demand_cost": round(demand_cents / 100, 2),
+        "total_cost": round((energy_cents + supply + subscription + demand_cents) / 100, 2),
         "periods": {n: {"kwh": round(v["kwh"], 3), "cost": round(v["cost_cents"] / 100, 2), "rate_cents_per_kwh": round(v["rate_cents_per_kwh"], 5)} for n, v in buckets.items()},
+        "demand": demand_detail,
         "notes": notes,
     }
 

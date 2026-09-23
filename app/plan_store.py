@@ -73,6 +73,28 @@ def validate_plan(plan: dict) -> None:
     subscription = float(plan.get("monthly_subscription_dollars", 0))
     if subscription < 0:
         raise ValueError("Monthly subscription charge cannot be negative")
+    demand = plan.get("demand", {})
+    if demand is not None:
+        if not isinstance(demand, dict):
+            raise ValueError("demand must be an object")
+        if "enabled" in demand and not isinstance(demand.get("enabled"), bool):
+            raise ValueError("demand.enabled must be true or false")
+        demand_rate = float(demand.get("rate_dollars_per_kw_per_day", demand.get("rate_dollars_per_kw", 0)))
+        if demand_rate < 0:
+            raise ValueError("Demand rate cannot be negative")
+        windows = demand.get("windows", [])
+        if demand.get("enabled", False):
+            if not isinstance(windows, list):
+                raise ValueError("demand.windows must be a list")
+            for w in windows:
+                if not isinstance(w, dict) or not w.get("name") or not w.get("start") or not w.get("end"):
+                    raise ValueError("Each demand window requires name, start and end")
+                days = w.get("days", list(range(7)))
+                if any(int(d) not in range(7) for d in days):
+                    raise ValueError("Demand window days must use 0=Monday through 6=Sunday")
+                months = w.get("months")
+                if months is not None and (not isinstance(months, list) or any(int(m) not in range(1, 13) for m in months)):
+                    raise ValueError("Demand window months must use 1=January through 12=December")
     cl = plan.get("controlled_load", {})
     if cl is not None:
         if not isinstance(cl, dict):

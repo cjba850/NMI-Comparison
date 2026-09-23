@@ -14,7 +14,7 @@ from .plan_store import PlanStore, validate_plan
 BASE_DIR = Path(__file__).resolve().parent.parent
 PLANS_FILE = BASE_DIR / "data" / "plans.json"
 SYDNEY = ZoneInfo("Australia/Sydney")
-app = FastAPI(title="NMI Energy Plan Calculator", version="0.6.0")
+app = FastAPI(title="NMI Energy Plan Calculator", version="0.11.0")
 PLAN_STORE = PlanStore(PLANS_FILE)
 
 
