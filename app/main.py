@@ -1,19 +1,32 @@
 from __future__ import annotations
 import json
 from pathlib import Path
+from datetime import timezone
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
-from datetime import date
-from .aemo_client import AemoApiError, AemoNmiClient, intervals_to_csv
-from .engine import build_report, parse_aemo_spot_csv, parse_nmi_upload, calculate_plan
+from fastapi.responses import HTMLResponse
+from .engine import build_report, parse_aemo_spot_csv, parse_nmi_upload, calculate_plan, Interval
+from .meter_import import parse_meter_csv_text
+from .analysis import usage_report, monthly_usage, hourly_profile, data_quality
+from .reporting import plan_comparison, recommendation, _plan_monthly_costs
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PLANS_FILE = BASE_DIR / "data" / "plans.json"
-app = FastAPI(title="NMI Energy Plan Calculator", version="0.3.0")
+SYDNEY = ZoneInfo("Australia/Sydney")
+app = FastAPI(title="NMI Energy Plan Calculator", version="0.5.0")
 
 
 def load_plans():
     return json.loads(PLANS_FILE.read_text(encoding="utf-8"))
+
+
+def parse_intervals(raw_text: str):
+    # The supplied meter export has Active Amt/Active UOM and richer validation
+    # metadata. Convert its local Australian timestamps to timezone-aware Intervals.
+    if "Active Amt" in raw_text and "Interval Date/Time" in raw_text:
+        rows = parse_meter_csv_text(raw_text)
+        return [Interval(r.timestamp.replace(tzinfo=SYDNEY), r.active_kwh, "import", r.read_quality) for r in rows]
+    return parse_nmi_upload(raw_text)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -37,7 +50,8 @@ async def api_calculate(
     if len(raw) > 25 * 1024 * 1024:
         raise HTTPException(413, "NMI CSV exceeds 25 MB limit")
     try:
-        intervals = parse_nmi_upload(raw.decode("utf-8-sig"))
+        text = raw.decode("utf-8-sig")
+        intervals = parse_intervals(text)
         spot_prices = None
         if spot_file is not None:
             spot_raw = await spot_file.read()
@@ -50,51 +64,20 @@ async def api_calculate(
                 results.append(calculate_plan(intervals, plan, year, spot_prices, region))
             except ValueError as exc:
                 results.append({"provider": plan["provider"], "plan": plan["name"], "plan_id": plan["id"], "type": plan["usage"]["type"], "error": str(exc)})
-        return build_report(results, year, file.filename or "upload.csv", region)
+
+        report = build_report(results, year, file.filename or "upload.csv", region)
+        report["usage"] = usage_report(intervals, year)
+        report["monthly_usage"] = monthly_usage(intervals, year)
+        report["hourly_profile"] = hourly_profile(intervals, year)
+        report["data_quality"] = data_quality(intervals, year)
+        report["comparison"] = {"sorted_by_total_cost": plan_comparison(results)}
+        report["recommendation"] = recommendation(results)
+        report["monthly_costs"] = {}
+        for plan in load_plans():
+            try:
+                report["monthly_costs"][plan["id"]] = _plan_monthly_costs(intervals, plan, year, spot_prices, region)
+            except ValueError:
+                report["monthly_costs"][plan["id"]] = []
+        return report
     except (UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
-
-
-@app.get("/api/aemo/nmi/{nmi}/usage")
-def api_aemo_usage(
-    nmi: str,
-    start: date,
-    end: date,
-    interval_reads: str = "FULL",
-):
-    try:
-        intervals = AemoNmiClient.from_env().get_usage(nmi, start, end, interval_reads)
-        return {
-            "nmi": nmi,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "interval_reads": interval_reads.upper(),
-            "intervals": [
-                {"timestamp": x.timestamp.isoformat(), "kwh": x.kwh, "register": x.register}
-                for x in intervals
-            ],
-            "count": len(intervals),
-            "total_kwh": round(sum(x.kwh for x in intervals), 3),
-        }
-    except (AemoApiError, ValueError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@app.get("/api/aemo/nmi/{nmi}/download")
-def api_aemo_download(
-    nmi: str,
-    start: date,
-    end: date,
-    interval_reads: str = "FULL",
-):
-    try:
-        intervals = AemoNmiClient.from_env().get_usage(nmi, start, end, interval_reads)
-    except (AemoApiError, ValueError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    csv_data = intervals_to_csv(intervals)
-    filename = f"nmi-{nmi}-{start.isoformat()}-{end.isoformat()}.csv"
-    return StreamingResponse(
-        iter([csv_data]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )

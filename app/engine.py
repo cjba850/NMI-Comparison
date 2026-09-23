@@ -16,6 +16,7 @@ class Interval:
     timestamp: datetime
     kwh: float
     register: str = "import"
+    read_quality: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ def parse_nem12(text: str) -> list[Interval]:
                     continue
                 if kwh < 0:
                     continue
-                out.append(Interval(local_interval(d, i, interval_minutes), kwh, register))
+                out.append(Interval(local_interval(d, i, interval_minutes), kwh, register, ""))
     if not out:
         raise ValueError("No interval records were found in the NEM12 file")
     return out
@@ -85,7 +86,7 @@ def parse_flat_csv(text: str) -> list[Interval]:
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=SYDNEY)
             register = row.get(register_field, "import") if register_field else "import"
-            out.append(Interval(ts.astimezone(SYDNEY), float(row[fields["kwh"]]), register or "import"))
+            out.append(Interval(ts.astimezone(SYDNEY), float(row[fields["kwh"]]), register or "import", ""))
         if out:
             return out
 
@@ -110,7 +111,7 @@ def parse_flat_csv(text: str) -> list[Interval]:
                 for i, (_, col) in enumerate(periods):
                     raw = row.get(col)
                     if raw not in (None, ""):
-                        out.append(Interval(local_interval(d, i, step), float(raw)))
+                        out.append(Interval(local_interval(d, i, step), float(raw), "import", ""))
             if out:
                 return out
     raise ValueError("Unsupported CSV format. Use NEM12, timestamp/kWh CSV, or AEMO CSVIntervalData format.")
@@ -242,17 +243,15 @@ def _base_result(plan: dict, year: int, selected: list[Interval], energy_cents: 
 
 
 def calculate_flat_or_tou(intervals: list[Interval], plan: dict, year: int) -> dict:
-    selected = [x for x in intervals if x.timestamp.astimezone(SYDNEY).year == year]
-    selected = [x for x in selected if x.register.lower() == "import" or x.register == "import"]
+    selected = [x for x in intervals if x.timestamp.astimezone(SYDNEY).year == year and x.register.lower() == "import"]
+    selected = [x for x in selected if applies(plan, x.timestamp.astimezone(SYDNEY).date())]
     if not selected:
-        raise ValueError(f"No import interval data found for {year}")
+        raise ValueError(f"No import interval data covered by plan {plan['name']} for {year}")
     energy = 0.0
     buckets: dict = {}
     usage = plan["usage"]
     for item in selected:
         ts = item.timestamp.astimezone(SYDNEY)
-        if not applies(plan, ts.date()):
-            continue
         if usage["type"] == "flat":
             name, rate = "flat", float(usage["cents_per_kwh"])
         elif usage["type"] == "tou":
@@ -279,8 +278,9 @@ def _spot_map(prices: list[SpotPrice], region: str) -> dict[datetime, float]:
 
 def calculate_wholesale(intervals: list[Interval], plan: dict, year: int, prices: list[SpotPrice], region: str) -> dict:
     selected = [x for x in intervals if x.timestamp.astimezone(SYDNEY).year == year and x.register.lower() == "import"]
+    selected = [x for x in selected if applies(plan, x.timestamp.astimezone(SYDNEY).date())]
     if not selected:
-        raise ValueError(f"No import interval data found for {year}")
+        raise ValueError(f"No import interval data covered by plan {plan['name']} for {year}")
     spot = _spot_map(prices, region)
     cfg = plan["usage"]
     margin = float(cfg.get("margin_cents_per_kwh", 0))

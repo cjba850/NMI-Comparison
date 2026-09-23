@@ -1,9 +1,11 @@
-feat: v0.4 add grid-import meter CSV importer
+feat: add v0.5 usage analysis and plan comparison dashboard
 
-- support supplied Interval Date/Time meter export
-- use Active Amt as authoritative grid consumption
-- support KWH and MWH active units
-- retain quality, reactive, apparent and power-factor fields
-- validate duplicate and missing intervals
-- keep AEMO API integration optional and disabled by default
-- retain Flat, TOU and Wholesale calculation architecture
+- add daily, monthly and hourly usage analysis
+- report maximum, median and P90 daily consumption
+- add data-quality and coverage reporting
+- calculate monthly plan cost breakdowns
+- add visual plan comparison dashboard
+- add explainable historical-cost recommendation
+- preserve v0.4 Active Amt grid-import CSV handling
+- document wholesale replay assumptions and limitations
+- update README and deployment/API documentation
