@@ -1,173 +1,119 @@
-# NMI Energy Plan Calculator
+# NMI Energy Plan Calculator v0.6
 
-Standalone FastAPI web service for replaying actual electricity-meter interval data against configurable electricity plans.
+A standalone FastAPI web service for replaying actual NMI electricity consumption against locally maintained electricity plans.
 
-## v0.5 — reporting dashboard
+## What it does
 
-Version 0.5 adds a reporting layer on top of the v0.4 meter importer and tariff engines.
+Upload an NMI CSV and the application calculates usage statistics and historical plan costs using the actual interval consumption in the file.
 
-### What it does
+For the supplied meter-export format, `Active Amt` is authoritative grid-import consumption. The parser supports the supplied Australian date format (`d/m/YYYY H:MM`) and KWH/MWH values.
 
-- Uploads the supplied NMI CSV format and uses **Active Amt** + **Active UOM** as grid-import consumption.
-- Supports flat, time-of-use (TOU), and wholesale/spot plan calculations.
-- Accepts optional AEMO spot-price CSV data for wholesale plans.
-- Calculates:
-  - total consumption
-  - average daily consumption
-  - maximum and minimum usage day
-  - median and P90 daily usage
-  - monthly usage
-  - hourly usage profile
-  - plan energy cost, supply cost and total historical cost
-  - effective total cost per kWh
-- Shows a visual dashboard with daily/monthly usage and plan-cost charts.
-- Provides an explainable **historical-cost recommendation**: the configured plan that produced the lowest calculated cost for the uploaded usage history.
-- Provides a data-quality summary including interval length, gaps, duplicates, actual/estimated read counts and coverage.
+The dashboard provides:
 
-### Important interpretation
+- total kWh
+- average, minimum, maximum, median and P90 daily usage
+- daily and monthly usage views
+- interval/data-quality checks
+- flat tariff replay
+- time-of-use tariff replay
+- wholesale/spot replay using supplied AEMO spot prices
+- monthly cost breakdowns
+- effective cost per kWh
+- an explainable historical-cost comparison
 
-The recommendation is a **historical replay**, not a forecast. It answers:
+## Local electricity plan management
 
-> "If this exact usage history had been charged under each configured plan, what would the calculated cost have been?"
+Version 0.6 adds a **Manage plans** interface. You can create, edit and delete plans directly from the browser.
 
-It does not guarantee that the same plan will be cheapest in future. This is particularly important for wholesale plans because future spot prices can vary substantially.
-
-## Project layout
+Plans are stored locally in:
 
 ```text
-nmi-energy-calculator/
-├── app/
-│   ├── analysis.py       # Daily/monthly/profile/data-quality analysis
-│   ├── aemo_config.py    # Optional AEMO API feature flag
-│   ├── engine.py         # NMI/AEMO parsing and tariff engines
-│   ├── main.py           # FastAPI application and reporting API
-│   ├── meter_import.py   # Supplied NMI CSV parser/validation
-│   └── reporting.py      # Plan comparison and recommendation
-├── data/
-│   └── plans.json        # Example plan definitions
-├── docs/
-│   ├── AEMO_API.md
-│   ├── COMMIT_MESSAGE.txt
-│   ├── DESIGN.md
-│   ├── METER_CSV_FORMAT.md
-│   ├── PLAN_SCHEMA.md
-│   └── SYSTEMD.md
-├── static/
-│   └── index.html        # Standalone dashboard
-├── tests/
-└── requirements.txt
+data/plans.json
 ```
 
-## Quick start
+Before a write, the previous file is retained as:
+
+```text
+data/plans.json.backup
+```
+
+No plan data is sent to a cloud database.
+
+Supported plan types:
+
+1. **Flat** — one usage rate plus daily supply charge.
+2. **TOU** — any number of named periods with weekday selection, start/end times and rates.
+3. **Wholesale / spot** — AEMO RRP plus a fixed retailer margin and other per-kWh component.
+
+Historical tariff versions are supported using `effective_from` and `effective_to`. This is important when comparing five months of 2025 usage against the actual tariff that applied during those dates rather than today's tariff.
+
+See `docs/PLAN_MANAGEMENT.md` and `docs/PLAN_SCHEMA.md` for details.
+
+## Running
 
 ```bash
 cd nmi-energy-calculator
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
-Open `http://127.0.0.1:8000/`.
-
-For a LAN-facing service, bind to an appropriate interface or put it behind a reverse proxy. See `docs/SYSTEMD.md` for a systemd example.
-
-## NMI CSV format
-
-The supported meter export contains columns such as:
+Open:
 
 ```text
-Role
-Interval Date/Time
-Part Description
-Read Quality
-UOM
-Amt
-Active UOM
-Active Amt
-Reactive UOM
-Reactive Amt
-Apparent UOM
-Apparent Amt
-Power Factor
+http://server-address:8080/
 ```
 
-For the grid-import-only use case, **Active Amt is authoritative**. `Amt` is deliberately ignored.
+## Analysis year
 
-Australian timestamps such as `1/05/2025 0:00` are parsed as local `Australia/Sydney` time for tariff/reporting purposes.
+Leave **Analysis year** blank to automatically detect the year when the CSV contains one year. If a CSV contains multiple years, select the required year explicitly.
 
-`KWH` and `MWH` are supported. Reactive, apparent and power-factor fields are retained for validation/reporting but are not included in the energy charge calculation.
+## Important cost assumptions
 
-See `docs/METER_CSV_FORMAT.md`.
+The calculator is a historical replay tool. It does not predict future bills.
 
-## Plan configuration
+Supply charges are currently calculated for the calendar days represented in the uploaded data. For a partial year, treat the resulting total as the cost for the supplied period, not a full-year bill.
 
-Plans are configured in `data/plans.json`. The included plans are deliberately fictional examples and must be replaced with real retailer plan data before using the results for a purchasing decision.
+For wholesale plans, 30-minute NMI intervals are matched to the average of the six corresponding five-minute AEMO RRP values. This is an explicit approximation because the meter consumption is supplied at 30-minute resolution.
 
-Supported usage types:
+Actual retailer bills can contain additional charges, discounts, taxes, controlled-load components, demand charges, green-power products and other terms. Add these to the plan schema as required before treating the result as a bill reproduction.
 
-- `flat`
-- `tou`
-- `wholesale`
-
-Daily supply charges are configured separately and are calculated for the calendar days represented by the uploaded data.
-
-See `docs/PLAN_SCHEMA.md`.
-
-## Wholesale calculation
-
-Wholesale plans use AEMO RRP values in $/MWh. The engine converts these to cents/kWh and adds the configured retailer margin and other per-kWh component.
-
-For 30-minute NMI data, the current implementation uses the average of the six matching five-minute spot prices. This is an explicit modelling assumption for interval replay; it is not a claim that a retailer's actual wholesale bill will be identical to spot price multiplied by consumption.
-
-Wholesale results also report intervals for which a matching spot price was unavailable.
-
-## AEMO API
-
-The AEMO API integration remains optional and disabled by default. CSV uploads remain the standard path and do not require AEMO credentials or certificates.
-
-See `docs/AEMO_API.md`.
-
-## API
-
-### `GET /api/plans`
-
-Returns configured plan metadata.
-
-### `POST /api/calculate`
-
-Multipart form fields:
-
-- `file` — NMI CSV
-- `year` — reporting year
-- `region` — NEM region, default `NSW1`
-- `spot_file` — optional AEMO spot-price CSV
-
-The response contains the plan calculations plus:
-
-- `usage`
-- `monthly_usage`
-- `hourly_profile`
-- `data_quality`
-- `comparison.sorted_by_total_cost`
-- `recommendation`
-- `monthly_costs`
-
-## Testing
-
-From the project directory:
+## Tests
 
 ```bash
 pytest -q
 ```
 
-The tests cover the supplied meter format, validation, tariff calculations and AEMO configuration/parser behaviour.
+## Project layout
 
-## Production notes
+```text
+app/
+  main.py
+  engine.py
+  meter_import.py
+  analysis.py
+  reporting.py
+  plan_store.py
+  aemo_config.py
 
-- Replace the fictional plans before using the calculator for real plan selection.
-- Record the source document and effective dates for each real plan.
-- Keep historical plan definitions rather than overwriting old rates, so historical replays remain reproducible.
-- Treat wholesale calculations as estimates unless the retailer's complete pricing structure is modelled.
-- If the uploaded period is incomplete, use the coverage information before interpreting annual costs.
-- For an external-facing deployment, add authentication, HTTPS and appropriate upload limits.
+data/
+  plans.json
+
+docs/
+  PLAN_SCHEMA.md
+  PLAN_MANAGEMENT.md
+  REPORTING.md
+  DESIGN.md
+  SYSTEMD.md
+  COMMIT_MESSAGE.txt
+
+static/
+  index.html
+
+tests/
+```
+
+## Security note
+
+The plan-management API is intentionally simple and local. If the service is exposed through a reverse proxy, VPN or tunnel to untrusted users, add authentication/authorisation before allowing plan modifications.

@@ -1,11 +1,12 @@
-feat: add v0.5 usage analysis and plan comparison dashboard
+feat: add local electricity plan management interface
 
-- add daily, monthly and hourly usage analysis
-- report maximum, median and P90 daily consumption
-- add data-quality and coverage reporting
-- calculate monthly plan cost breakdowns
-- add visual plan comparison dashboard
-- add explainable historical-cost recommendation
-- preserve v0.4 Active Amt grid-import CSV handling
-- document wholesale replay assumptions and limitations
-- update README and deployment/API documentation
+- add browser UI for creating, editing and deleting electricity plans
+- store plans locally in data/plans.json
+- create a plans.json.backup before writes
+- support flat, TOU and wholesale plan definitions
+- support historical effective-from/effective-to tariff versions
+- validate plan IDs, dates, rates and TOU periods
+- add plan management API endpoints
+- auto-detect the analysis year when the uploaded CSV contains one year
+- document local plan storage, API and security considerations
+- add plan store tests

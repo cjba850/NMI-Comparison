@@ -9,15 +9,17 @@ from .engine import build_report, parse_aemo_spot_csv, parse_nmi_upload, calcula
 from .meter_import import parse_meter_csv_text
 from .analysis import usage_report, monthly_usage, hourly_profile, data_quality
 from .reporting import plan_comparison, recommendation, _plan_monthly_costs
+from .plan_store import PlanStore, validate_plan
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PLANS_FILE = BASE_DIR / "data" / "plans.json"
 SYDNEY = ZoneInfo("Australia/Sydney")
-app = FastAPI(title="NMI Energy Plan Calculator", version="0.5.0")
+app = FastAPI(title="NMI Energy Plan Calculator", version="0.6.0")
+PLAN_STORE = PlanStore(PLANS_FILE)
 
 
 def load_plans():
-    return json.loads(PLANS_FILE.read_text(encoding="utf-8"))
+    return PLAN_STORE.list()
 
 
 def parse_intervals(raw_text: str):
@@ -36,13 +38,37 @@ def index():
 
 @app.get("/api/plans")
 def plans():
-    return [{"id": p["id"], "provider": p["provider"], "name": p["name"], "type": p["usage"]["type"], "effective_from": p["effective_from"], "effective_to": p.get("effective_to")} for p in load_plans()]
+    return load_plans()
+
+
+@app.post("/api/plans")
+async def create_or_update_plan(plan: dict):
+    try:
+        validate_plan(plan)
+        return PLAN_STORE.save(plan)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/plans/{plan_id}")
+def delete_plan(plan_id: str):
+    if not PLAN_STORE.delete(plan_id):
+        raise HTTPException(404, "Plan not found")
+    return {"deleted": plan_id}
+
+
+@app.get("/api/plans/{plan_id}")
+def get_plan(plan_id: str):
+    plan = PLAN_STORE.get(plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return plan
 
 
 @app.post("/api/calculate")
 async def api_calculate(
     file: UploadFile = File(...),
-    year: int = Form(...),
+    year: int | None = Form(None),
     region: str = Form("NSW1"),
     spot_file: UploadFile | None = File(None),
 ):
@@ -52,6 +78,13 @@ async def api_calculate(
     try:
         text = raw.decode("utf-8-sig")
         intervals = parse_intervals(text)
+        if year is None:
+            years = sorted({i.timestamp.astimezone(SYDNEY).year for i in intervals})
+            if not years:
+                raise ValueError("No dated interval data was found")
+            if len(years) > 1:
+                raise ValueError(f"CSV contains multiple years ({', '.join(map(str, years))}); select an analysis year")
+            year = years[0]
         spot_prices = None
         if spot_file is not None:
             spot_raw = await spot_file.read()
