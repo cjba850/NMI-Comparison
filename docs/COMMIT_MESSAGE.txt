@@ -1,12 +1,8 @@
-feat: add local electricity plan management interface
+fix: support AEMO SETTLEMENTDATE trading-price CSV exports
 
-- add browser UI for creating, editing and deleting electricity plans
-- store plans locally in data/plans.json
-- create a plans.json.backup before writes
-- support flat, TOU and wholesale plan definitions
-- support historical effective-from/effective-to tariff versions
-- validate plan IDs, dates, rates and TOU periods
-- add plan management API endpoints
-- auto-detect the analysis year when the uploaded CSV contains one year
-- document local plan storage, API and security considerations
-- add plan store tests
+- parse AEMO SETTLEMENTDATE values in d/m/YYYY H:MM format
+- support REGION, SETTLEMENTDATE, TOTALDEMAND, RRP and PERIODTYPE exports
+- accept TRADE/TRADING period types and ignore other period types
+- convert settlement-end timestamps to interval-start timestamps for matching NMI data
+- normalise AEMO region identifiers
+- add parser regression tests for the supplied AEMO CSV format

@@ -129,7 +129,16 @@ def _normalise_header(row: list[str]) -> dict[str, str]:
 
 def _parse_aemo_datetime(raw: str) -> datetime:
     raw = raw.strip()
-    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M"):
+    # AEMO exports commonly use Australian local time as d/m/YYYY H:MM,
+    # while other APIs/reports use ISO-like formats.
+    for fmt in (
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y-%m-%d %H:%M",
+    ):
         try:
             return datetime.strptime(raw, fmt).replace(tzinfo=SYDNEY)
         except ValueError:
@@ -170,6 +179,13 @@ def parse_aemo_spot_csv(text: str, default_region: str | None = None) -> list[Sp
             data = data[:len(header_names)]
         record = dict(zip(header_names, data))
 
+        # The SETTLEMENTDATE/RRP export supplied by the user is a 5-minute
+        # trading-price table.  PERIODTYPE=TRADE is the relevant series;
+        # ignore other period types when present.
+        period_type = (record.get("periodtype") or "").strip().upper()
+        if period_type and period_type not in {"TRADE", "TRADING"}:
+            continue
+
         ts_raw = record.get("interval_datetime") or record.get("timestamp")
         region = record.get("regionid") or record.get("region") or default_region
         rrp_raw = record.get("rrp") or record.get("price")
@@ -184,10 +200,19 @@ def parse_aemo_spot_csv(text: str, default_region: str | None = None) -> list[Sp
                     ts_raw = (d + timedelta(minutes=(int(period) - 1) * 5)).isoformat()
                 except (ValueError, TypeError):
                     pass
+
+        # In this export SETTLEMENTDATE is the end of the five-minute
+        # settlement interval (e.g. 00:05 is the price for 00:00-00:05).
+        # Internally the calculator uses interval start timestamps, so shift
+        # these records back by five minutes.
+        settlement_only = not (record.get("interval_datetime") or record.get("timestamp"))
         if not ts_raw or not rrp_raw or not region:
             continue
         try:
-            out.append(SpotPrice(_parse_aemo_datetime(ts_raw), str(region).strip(), float(rrp_raw)))
+            ts = _parse_aemo_datetime(ts_raw)
+            if settlement_only and record.get("settlementdate"):
+                ts -= timedelta(minutes=5)
+            out.append(SpotPrice(ts, str(region).strip().upper(), float(rrp_raw)))
         except (ValueError, TypeError):
             continue
 
@@ -196,12 +221,19 @@ def parse_aemo_spot_csv(text: str, default_region: str | None = None) -> list[Sp
         if reader.fieldnames:
             f = {x.strip().lower(): x for x in reader.fieldnames}
             for row in reader:
-                ts = row.get(f.get("interval_datetime", f.get("timestamp", "")))
+                ts_key = f.get("interval_datetime", f.get("timestamp", ""))
+                ts = row.get(ts_key) if ts_key else row.get(f.get("settlementdate", ""))
                 price = row.get(f.get("rrp", f.get("price", "")))
                 region = row.get(f.get("regionid", f.get("region", ""))) or default_region
+                period_type = (row.get(f.get("periodtype", ""), "") or "").strip().upper()
+                if period_type and period_type not in {"TRADE", "TRADING"}:
+                    continue
                 if ts and price and region:
                     try:
-                        out.append(SpotPrice(_parse_aemo_datetime(ts), region, float(price)))
+                        parsed = _parse_aemo_datetime(ts)
+                        if not ts_key and f.get("settlementdate"):
+                            parsed -= timedelta(minutes=5)
+                        out.append(SpotPrice(parsed, str(region).strip().upper(), float(price)))
                     except ValueError:
                         pass
     if not out:

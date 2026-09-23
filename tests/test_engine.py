@@ -47,3 +47,27 @@ def test_wholesale_30min_averages_six_prices():
     # Mean RRP = 125 $/MWh = 12.5 c/kWh; + 5c margin = 17.5c/kWh; 6kWh => $1.05
     assert r["total_cost"] == 1.05
     assert r["wholesale"]["missing_intervals"] == 0
+
+
+def test_aemo_settlementdate_trade_csv():
+    text = """REGION,SETTLEMENTDATE,TOTALDEMAND,RRP,PERIODTYPE
+NSW1,1/01/2026 0:05,6713.88,71.24,TRADE
+NSW1,1/01/2026 0:10,6751.48,65.31,TRADE
+NSW1,1/01/2026 0:15,6715.71,69.28,TRADE
+"""
+    prices = parse_aemo_spot_csv(text)
+    assert len(prices) == 3
+    assert prices[0].region == "NSW1"
+    assert prices[0].timestamp == datetime(2026, 1, 1, 0, 0, tzinfo=SYDNEY)
+    assert prices[0].rrp_mwh == 71.24
+    assert prices[1].timestamp == datetime(2026, 1, 1, 0, 5, tzinfo=SYDNEY)
+
+
+def test_aemo_settlementdate_ignores_non_trade_rows():
+    text = """REGION,SETTLEMENTDATE,TOTALDEMAND,RRP,PERIODTYPE
+NSW1,1/01/2026 0:05,6713.88,71.24,TRADE
+NSW1,1/01/2026 0:05,6713.88,999.99,OTHER
+"""
+    prices = parse_aemo_spot_csv(text)
+    assert len(prices) == 1
+    assert prices[0].rrp_mwh == 71.24

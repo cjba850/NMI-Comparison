@@ -75,7 +75,7 @@ The calculator is a historical replay tool. It does not predict future bills.
 
 Supply charges are currently calculated for the calendar days represented in the uploaded data. For a partial year, treat the resulting total as the cost for the supplied period, not a full-year bill.
 
-For wholesale plans, 30-minute NMI intervals are matched to the average of the six corresponding five-minute AEMO RRP values. This is an explicit approximation because the meter consumption is supplied at 30-minute resolution.
+For wholesale plans, 30-minute NMI intervals are matched to the average of the six corresponding five-minute AEMO RRP values. The AEMO importer accepts common `REGION,SETTLEMENTDATE,TOTALDEMAND,RRP,PERIODTYPE` exports, including Australian `d/m/YYYY H:MM` timestamps. For `SETTLEMENTDATE` exports, the settlement timestamp is treated as the end of the five-minute interval and converted to the interval start before matching to NMI usage. This is an explicit approximation because the meter consumption is supplied at 30-minute resolution.
 
 Actual retailer bills can contain additional charges, discounts, taxes, controlled-load components, demand charges, green-power products and other terms. Add these to the plan schema as required before treating the result as a bill reproduction.
 
