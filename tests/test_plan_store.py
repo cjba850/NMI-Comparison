@@ -37,3 +37,25 @@ def test_plan_store_accepts_dollar_supply_subscription_and_controlled_load(tmp_p
     store = PlanStore(tmp_path/'plans.json')
     store.save(plan)
     assert store.get('fees-plan')['daily_supply_dollars'] == 1.25
+
+
+def test_validate_tou_months():
+    p=flat_plan('seasonal')
+    p['usage']={'type':'tou','periods':[{'name':'summer peak','months':[12,1,2],'days':[0,1,2,3,4],'start':'14:00','end':'20:00','cents_per_kwh':45}]}
+    validate_plan(p)
+
+def test_reject_invalid_tou_month():
+    p=flat_plan('bad-season')
+    p['usage']={'type':'tou','periods':[{'name':'bad','months':[0,13],'days':[0,1,2,3,4],'start':'14:00','end':'20:00','cents_per_kwh':45}]}
+    with pytest.raises(ValueError): validate_plan(p)
+
+
+def test_validate_tou_months():
+    p=flat_plan('seasonal')
+    p['usage']={'type':'tou','periods':[{'name':'summer peak','months':[12,1,2],'days':[0,1,2,3,4],'start':'14:00','end':'20:00','cents_per_kwh':45}]}
+    validate_plan(p)
+
+def test_reject_invalid_tou_month():
+    p=flat_plan('bad-season')
+    p['usage']={'type':'tou','periods':[{'name':'bad','months':[0,13],'days':[0,1,2,3,4],'start':'14:00','end':'20:00','cents_per_kwh':45}]}
+    with pytest.raises(ValueError): validate_plan(p)

@@ -92,3 +92,35 @@ def test_controlled_load_rates_are_reported_but_not_applied_without_separate_reg
     result = calculate_plan([Interval(datetime(2026,1,1,0,0),2.0)], plan, 2026)
     assert result["total_cost"] == 0.4
     assert any("Controlled-load rates are configured" in n for n in result["notes"])
+
+
+def test_tou_seasonal_months_override_same_hour():
+    intervals = [
+        Interval(datetime(2026, 1, 5, 15, 0, tzinfo=SYDNEY), 2),
+        Interval(datetime(2026, 3, 5, 15, 0, tzinfo=SYDNEY), 2),
+    ]
+    plan = {"id":"seasonal","provider":"Test","name":"Seasonal TOU","effective_from":"2026-01-01","effective_to":None,"daily_supply_dollars":0,"usage":{"type":"tou","periods":[
+        {"name":"summer peak","months":[12,1,2],"days":[0,1,2,3,4],"start":"14:00","end":"20:00","cents_per_kwh":50},
+        {"name":"shoulder","months":[3,4,5,9,10,11],"days":[0,1,2,3,4],"start":"14:00","end":"20:00","cents_per_kwh":30},
+        {"name":"offpeak","days":[0,1,2,3,4,5,6],"start":"20:00","end":"14:00","cents_per_kwh":10}
+    ]}}
+    r = calculate_plan(intervals, plan, 2026)
+    assert r["periods"]["summer peak"]["kwh"] == 2
+    assert r["periods"]["shoulder"]["kwh"] == 2
+    assert r["total_cost"] == 1.6
+
+
+def test_tou_seasonal_months_override_same_hour():
+    intervals = [
+        Interval(datetime(2026, 1, 5, 15, 0, tzinfo=SYDNEY), 2),
+        Interval(datetime(2026, 3, 5, 15, 0, tzinfo=SYDNEY), 2),
+    ]
+    plan = {"id":"seasonal","provider":"Test","name":"Seasonal TOU","effective_from":"2026-01-01","effective_to":None,"daily_supply_dollars":0,"usage":{"type":"tou","periods":[
+        {"name":"summer peak","months":[12,1,2],"days":[0,1,2,3,4],"start":"14:00","end":"20:00","cents_per_kwh":50},
+        {"name":"shoulder","months":[3,4,5,9,10,11],"days":[0,1,2,3,4],"start":"14:00","end":"20:00","cents_per_kwh":30},
+        {"name":"offpeak","days":[0,1,2,3,4,5,6],"start":"20:00","end":"14:00","cents_per_kwh":10}
+    ]}}
+    r = calculate_plan(intervals, plan, 2026)
+    assert r["periods"]["summer peak"]["kwh"] == 2
+    assert r["periods"]["shoulder"]["kwh"] == 2
+    assert r["total_cost"] == 1.6

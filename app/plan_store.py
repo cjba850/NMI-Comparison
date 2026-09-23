@@ -100,6 +100,10 @@ def validate_plan(plan: dict) -> None:
             days = p.get("days", list(range(7)))
             if any(int(d) not in range(7) for d in days):
                 raise ValueError("TOU days must use 0=Monday through 6=Sunday")
+            months = p.get("months")
+            if months is not None:
+                if not isinstance(months, list) or any(int(m) not in range(1, 13) for m in months):
+                    raise ValueError("TOU months must use 1=January through 12=December")
     else:
         for key in ("margin_cents_per_kwh", "other_cents_per_kwh"):
             if float(usage.get(key, 0)) < 0:

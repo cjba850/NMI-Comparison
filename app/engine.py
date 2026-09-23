@@ -249,8 +249,12 @@ def applies(plan: dict, d: date) -> bool:
 
 def tou_rate(usage: dict, ts: datetime) -> tuple[str, float]:
     weekday = ts.weekday()
+    month = ts.month
     current = ts.timetz().replace(tzinfo=None)
     for p in usage.get("periods", []):
+        months = p.get("months")
+        if months is not None and month not in [int(m) for m in months]:
+            continue
         if weekday not in p.get("days", list(range(7))):
             continue
         start = time.fromisoformat(p["start"])
