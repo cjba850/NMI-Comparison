@@ -1,0 +1,2 @@
+﻿Role,Interval Date/Time ,Part Description,Read Quality,UOM,Amt     ,Active UOM,Active Amt,Reactive UOM,Reactive Amt,Apparent UOM,Apparent Amt,Power Factor
+FRMP,1/05/2025 0:00,ALL             ,Actual      ,   ,0,KWH       ,0.173,            ,            ,KWH       ,0.173,1

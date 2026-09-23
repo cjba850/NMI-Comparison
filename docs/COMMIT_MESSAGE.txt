@@ -1,17 +1,9 @@
-feat: add AEMO NMI usage API lookup and CSV download
+feat: v0.4 add grid-import meter CSV importer
 
-Add an AEMO CDR client for getUsageForServicePoint with:
-- production and pre-production endpoint configuration
-- URM basic authentication
-- optional client TLS certificate/key
-- date range and FULL/MIN_30 interval selection
-- pagination handling
-- conversion of CDR usage responses to the common Interval model
-- normalised CSV download endpoint
-- browser preview/download controls
-- server-side credential handling
-- AEMO API configuration and access documentation
-- unit tests for CDR response parsing and download format
-
-Note: AEMO CDR access requires the appropriate participant/ADR arrangements,
-URM permissions and TLS certificates. The application does not bypass AEMO access controls.
+- support supplied Interval Date/Time meter export
+- use Active Amt as authoritative grid consumption
+- support KWH and MWH active units
+- retain quality, reactive, apparent and power-factor fields
+- validate duplicate and missing intervals
+- keep AEMO API integration optional and disabled by default
+- retain Flat, TOU and Wholesale calculation architecture

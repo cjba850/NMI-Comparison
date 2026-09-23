@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NMI Energy Plan Calculator v0.2</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:1200px;margin:36px auto;padding:0 20px;color:#222;background:#fafafa}.card{border:1px solid #ddd;border-radius:10px;padding:20px;margin:18px 0;background:#fff}button{padding:10px 16px;border:0;border-radius:6px;cursor:pointer}table{border-collapse:collapse;width:100%}th,td{padding:9px;border-bottom:1px solid #ddd;text-align:left}.total{font-weight:700}#error{color:#a00}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px}.metric{font-size:1.35rem;font-weight:700}.muted{color:#666}small{color:#555}
+</style></head><body>
+<h1>NMI Energy Plan Calculator</h1>
+<p>Compare actual NMI usage against flat, time-of-use and wholesale/spot plans.</p>
+<div class="card"><form id="form"><div class="grid">
+<label>NMI CSV<br><input id="file" type="file" accept=".csv,text/csv" required></label>
+<label>Year<br><input id="year" type="number" min="2000" max="2100" value="2026" required></label>
+<label>NEM region<br><select id="region"><option>NSW1</option><option>VIC1</option><option>QLD1</option><option>SA1</option><option>TAS1</option></select></label>
+<label>AEMO spot CSV<br><input id="spot" type="file" accept=".csv,text/csv"></label>
+</div><br><button>Calculate comparison</button></form><p class="muted">AEMO spot data is required for wholesale plans.</p><p id="error"></p></div>
+<div id="summary" class="card" hidden></div><div id="results"></div>
+<script>
+const form=document.querySelector('#form'),error=document.querySelector('#error'),summary=document.querySelector('#summary'),results=document.querySelector('#results');
+const money=v=>`$${Number(v).toFixed(2)}`;
+form.addEventListener('submit',async e=>{e.preventDefault();error.textContent='';results.innerHTML='';summary.hidden=true;
+const data=new FormData();data.append('file',document.querySelector('#file').files[0]);data.append('year',document.querySelector('#year').value);data.append('region',document.querySelector('#region').value);const spot=document.querySelector('#spot').files[0];if(spot)data.append('spot_file',spot);
+try{const response=await fetch('/api/calculate',{method:'POST',body:data});const body=await response.json();if(!response.ok)throw Error(body.detail||'Calculation failed');
+summary.hidden=false;summary.innerHTML=`<div class="grid"><div><div class="muted">Input</div><div class="metric">${body.filename}</div></div><div><div class="muted">Year</div><div class="metric">${body.year}</div></div><div><div class="muted">Region</div><div class="metric">${body.region||'—'}</div></div></div>`;
+const rows=(body.comparison.sorted_by_total_cost||[]);let html='<div class="card"><h2>Plan comparison</h2><table><tr><th>Provider</th><th>Plan</th><th>Type</th><th>Usage</th><th>Effective rate</th><th>Total</th><th>Δ vs first</th></tr>';
+for(const r of rows)html+=`<tr><td>${r.provider}</td><td>${r.plan}</td><td>${r.type}</td><td>${Number(r.usage_kwh).toLocaleString()} kWh</td><td>${r.effective_cents_per_kwh??'—'} c/kWh</td><td class="total">${money(r.total_cost)}</td><td>${money(r.difference_from_first)}</td></tr>`;html+='</table></div>';
+for(const r of body.plans.filter(x=>!x.error))html+=`<div class="card"><h3>${r.provider} — ${r.plan}</h3><p><strong>${r.type}</strong> · ${Number(r.usage_kwh).toLocaleString()} kWh · total ${money(r.total_cost)}</p><pre>${JSON.stringify(r.periods,null,2)}</pre>${r.notes.map(n=>`<small>${n}</small><br>`).join('')}</div>`;
+for(const r of body.plans.filter(x=>x.error))html+=`<div class="card"><strong>${r.provider} — ${r.plan}</strong><p>${r.error}</p></div>`;results.innerHTML=html;
+}catch(err){error.textContent=err.message}});
+</script></body></html>
